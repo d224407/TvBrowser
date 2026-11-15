@@ -17,9 +17,9 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '8.14.3'
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Build release APK
+        run: gradle assembleRelease --no-daemon
       - uses: actions/upload-artifact@v5
         with:
-          name: tv-browser-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: tv-browser-release
+          path: app/build/outputs/apk/release/*.apk
