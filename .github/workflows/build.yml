@@ -17,7 +17,15 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '8.14.3'
+      - name: Decode keystore
+        env:
+          KEYSTORE_CONTENT: ${{ secrets.KEYSTORE_CONTENT }}
+        run: echo "$KEYSTORE_CONTENT" | base64 -d > "$RUNNER_TEMP/release.jks"
       - name: Build release APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: gradle assembleRelease --no-daemon
       - uses: actions/upload-artifact@v5
         with:
