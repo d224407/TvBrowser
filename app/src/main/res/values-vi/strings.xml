@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Trình duyệt TV</string>
+    <string name="search_hint">Tìm kiếm hoặc nhập địa chỉ</string>
+    <string name="go">Đi</string>
+    <string name="new_tab">Tab mới</string>
+    <string name="tabs">Tab</string>
+    <string name="bookmarks">Dấu trang</string>
+    <string name="add_bookmark">Thêm dấu trang</string>
+    <string name="history">Lịch sử</string>
+    <string name="downloads">Tải xuống</string>
+    <string name="settings">Cài đặt</string>
+    <string name="home">Trang chủ</string>
+    <string name="exit">Thoát</string>
+    <string name="menu">Menu</string>
+    <string name="cursor_mode">Chế độ con trỏ</string>
+    <string name="desktop_mode">Trang web máy tính</string>
+    <string name="adblock">Chặn quảng cáo</string>
+    <string name="javascript">JavaScript</string>
+    <string name="third_party_cookies">Cookie bên thứ ba</string>
+    <string name="search_engine">Công cụ tìm kiếm</string>
+    <string name="text_size">Cỡ chữ</string>
+    <string name="update_filters">Cập nhật danh sách lọc</string>
+    <string name="clear_cache">Xóa bộ nhớ đệm</string>
+    <string name="clear_cookies">Xóa cookie và dữ liệu trang</string>
+    <string name="clear_history">Xóa lịch sử</string>
+    <string name="on">Bật</string>
+    <string name="off">Tắt</string>
+    <string name="rules">quy tắc</string>
+    <string name="updating">Đang cập nhật…</string>
+    <string name="open">Mở</string>
+    <string name="remove">Xóa</string>
+    <string name="status_done">Hoàn tất</string>
+    <string name="status_failed">Thất bại</string>
+    <string name="status_paused">Tạm dừng</string>
+    <string name="status_pending">Đang chờ</string>
+    <string name="error_title">Không thể mở trang này</string>
+    <string name="retry">Thử lại</string>
+</resources>

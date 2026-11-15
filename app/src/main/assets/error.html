@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="background:#0b0f17;color:#e8ecf3;font:28px sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center">
+<div>
+<h1 id="t"></h1>
+<p id="d" style="opacity:.7"></p>
+<a id="r" href="#" style="display:inline-block;margin-top:24px;padding:14px 32px;border-radius:12px;background:#4fc3f7;color:#000;text-decoration:none"></a>
+</div>
+<script>
+var q = new URLSearchParams(location.search);
+document.getElementById("t").textContent = q.get("t") || "";
+document.getElementById("d").textContent = q.get("d") || "";
+var r = document.getElementById("r");
+r.textContent = q.get("r") || "";
+r.href = q.get("u") || "#";
+</script>
