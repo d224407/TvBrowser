@@ -28,8 +28,8 @@ data class Settings(
     val adBlock: Boolean = true,
     val javascript: Boolean = true,
     val cursorMode: Boolean = true,
-    val desktopMode: Boolean = true,
+    val desktopMode: Boolean = false,
     val textZoom: Int = 100,
-    val thirdPartyCookies: Boolean = false,
+    val thirdPartyCookies: Boolean = true,
     val filterUrl: String = "https://easylist.to/easylist/easylist.txt",
 )

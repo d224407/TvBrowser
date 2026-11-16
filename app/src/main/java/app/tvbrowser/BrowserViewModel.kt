@@ -159,8 +159,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
         }
         val tab = active
         if (tab == null || tab.url.isEmpty()) return false
-        if (chromeVisible) {
-            hideChrome()
+        if (!chromeVisible) {
+            showChrome()
             return true
         }
         val wv = mgr?.activeWebView()

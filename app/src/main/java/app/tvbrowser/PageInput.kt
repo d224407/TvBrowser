@@ -2,6 +2,7 @@ package app.tvbrowser
 
 import android.app.Activity
 import android.os.SystemClock
+import android.view.Choreographer
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -25,7 +26,17 @@ class PageInput(
         private set
 
     private val density = activity.resources.displayMetrics.density
+
+    private companion object {
+        const val BASE_SPEED = 120f // dp/s
+        const val MAX_SPEED = 1100f // dp/s
+        const val ACCEL_TIME = 1.2f // s to reach max
+    }
     private var downTime = 0L
+    private val pressed = HashSet<Int>()
+    private var pressStart = 0L
+    private var lastFrame = 0L
+    private var running = false
 
     /** Returns true when the key was consumed. Only called while the page owns focus. */
     fun handle(e: KeyEvent): Boolean {
@@ -55,10 +66,11 @@ class PageInput(
         if (!vm.settings.cursorMode) return false
 
         when (e.keyCode) {
-            KeyEvent.KEYCODE_DPAD_UP -> return step(wv, down, e, 0f, -1f)
-            KeyEvent.KEYCODE_DPAD_DOWN -> return step(wv, down, e, 0f, 1f)
-            KeyEvent.KEYCODE_DPAD_LEFT -> return step(wv, down, e, -1f, 0f)
-            KeyEvent.KEYCODE_DPAD_RIGHT -> return step(wv, down, e, 1f, 0f)
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (down) press(wv, e.keyCode, e.repeatCount == 0) else release(e.keyCode)
+                return true
+            }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
                 ensureInit(wv)
                 if (down && e.repeatCount == 0) {
@@ -80,42 +92,91 @@ class PageInput(
         }
     }
 
-    private fun step(wv: WebView, down: Boolean, e: KeyEvent, dirX: Float, dirY: Float): Boolean {
-        if (!down) return true
+    private fun press(wv: WebView, code: Int, first: Boolean) {
+        if (!first) return
         ensureInit(wv)
+        if (code == KeyEvent.KEYCODE_DPAD_UP && cy <= 2f && !wv.canScrollVertically(-1)) {
+            vm.showChrome()
+            return
+        }
+        if (pressed.isEmpty()) {
+            pressStart = System.nanoTime()
+            lastFrame = 0L
+        }
+        pressed.add(code)
+        if (!running) {
+            running = true
+            Choreographer.getInstance().postFrameCallback(frame)
+        }
+    }
+
+    private fun release(code: Int) {
+        pressed.remove(code)
+        if (pressed.isEmpty()) lastFrame = 0L
+    }
+
+    private val frame = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            tick(frameTimeNanos)
+            if (pressed.isNotEmpty()) {
+                Choreographer.getInstance().postFrameCallback(this)
+            } else {
+                running = false
+            }
+        }
+    }
+
+    private fun tick(t: Long) {
+        val wv = mgr.activeWebView()
+        if (wv == null || vm.panel != Panel.NONE || vm.chromeVisible || !vm.settings.cursorMode) {
+            pressed.clear()
+            return
+        }
+        val dt = if (lastFrame == 0L) 1f / 60f else min((t - lastFrame) / 1e9f, 0.05f)
+        lastFrame = t
+        val held = (t - pressStart) / 1e9f
+
+        var dx = (if (KeyEvent.KEYCODE_DPAD_RIGHT in pressed) 1f else 0f) -
+            (if (KeyEvent.KEYCODE_DPAD_LEFT in pressed) 1f else 0f)
+        var dy = (if (KeyEvent.KEYCODE_DPAD_DOWN in pressed) 1f else 0f) -
+            (if (KeyEvent.KEYCODE_DPAD_UP in pressed) 1f else 0f)
+        if (dx == 0f && dy == 0f) return
+        if (dx != 0f && dy != 0f) {
+            dx *= 0.7071f
+            dy *= 0.7071f
+        }
+
         val w = wv.width.toFloat()
         val h = wv.height.toFloat()
-        val speed = (10f + min(e.repeatCount, 40) * 1.5f) * density
-        val tick = 1f + min(e.repeatCount, 20) / 5f
+        val ratio = min(held / ACCEL_TIME, 1f)
+        val speed = (BASE_SPEED + (MAX_SPEED - BASE_SPEED) * ratio * ratio) * density
         val bandV = 64f * density
         val bandH = 48f * density
+        val amt = dt * 60f * (0.4f + 1.0f * ratio)
 
-        var nx = cx + dirX * speed
-        var ny = cy + dirY * speed
+        var nx = cx + dx * speed * dt
+        var ny = cy + dy * speed * dt
 
-        if (dirY < 0f && cy < bandV) {
-            if (wv.canScrollVertically(-1)) {
-                scrollWheel(wv, cx, cy, tick)
-                ny = cy
-            } else if (cy <= 2f && e.repeatCount == 0) {
-                vm.showChrome()
-            }
-        } else if (dirY > 0f && cy > h - bandV && wv.canScrollVertically(1)) {
-            scrollWheel(wv, cx, cy, -tick)
+        if (dy < 0f && cy < bandV && wv.canScrollVertically(-1)) {
+            scrollWheel(wv, cx, cy, amt)
+            ny = cy
+        } else if (dy > 0f && cy > h - bandV && wv.canScrollVertically(1)) {
+            scrollWheel(wv, cx, cy, -amt)
             ny = cy
         }
-        if (dirX < 0f && cx < bandH && wv.canScrollHorizontally(-1)) {
-            scrollWheel(wv, cx, cy, 0f, tick)
+        if (dx < 0f && cx < bandH && wv.canScrollHorizontally(-1)) {
+            scrollWheel(wv, cx, cy, 0f, amt)
             nx = cx
-        } else if (dirX > 0f && cx > w - bandH && wv.canScrollHorizontally(1)) {
-            scrollWheel(wv, cx, cy, 0f, -tick)
+        } else if (dx > 0f && cx > w - bandH && wv.canScrollHorizontally(1)) {
+            scrollWheel(wv, cx, cy, 0f, -amt)
             nx = cx
         }
 
+        val ox = cx
+        val oy = cy
         cx = nx.coerceIn(0f, w - 1f)
         cy = ny.coerceIn(0f, h - 1f)
-        dispatchMouse(wv, MotionEvent.ACTION_HOVER_MOVE, cx, cy, 0f, 0f)
-        return true
+        if (cx != ox || cy != oy) dispatchMouse(wv, MotionEvent.ACTION_HOVER_MOVE, cx, cy, 0f, 0f)
     }
 
     private fun scrollWheel(wv: WebView, x: Float, y: Float, vertical: Float, horizontal: Float = 0f) {

@@ -18,12 +18,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -66,17 +68,6 @@ private fun AddressPanel(vm: BrowserViewModel) {
         runCatching { field.requestFocus() }
         keyboard?.show()
     }
-    val q = text.text.trim().lowercase()
-    val suggestions = remember(q) {
-        if (q.isEmpty()) {
-            emptyList()
-        } else {
-            (vm.bookmarks.map { it.title to it.url } + vm.history.map { it.title to it.url })
-                .filter { it.second.lowercase().contains(q) || it.first.lowercase().contains(q) }
-                .distinctBy { it.second }
-                .take(6)
-        }
-    }
     PanelFrame(stringResource(R.string.search_hint)) {
         OutlinedTextField(
             value = text,
@@ -94,9 +85,6 @@ private fun AddressPanel(vm: BrowserViewModel) {
                 if (text.text.isNotBlank()) {
                     TvRow(stringResource(R.string.go), text.text.trim(), Modifier.fillMaxWidth()) { vm.navigate(text.text) }
                 }
-            }
-            items(suggestions) { (title, url) ->
-                TvRow(title.ifEmpty { UrlUtils.display(url) }, url, Modifier.fillMaxWidth()) { vm.navigate(url) }
             }
         }
     }
@@ -272,10 +260,22 @@ private fun SettingsPanel(vm: BrowserViewModel, mgr: TabManager) {
         Triple(stringResource(R.string.clear_cookies), "") { vm.clearCookies() },
         Triple(stringResource(R.string.clear_history), "") { vm.clearHistory() },
     )
+    var sel by remember { mutableIntStateOf(0) }
+    val reqs = remember { List(rows.size) { FocusRequester() } }
+    LaunchedEffect(s, vm.adBlock.busy, vm.adBlock.ruleCount) {
+        runCatching { reqs[sel].requestFocus() }
+    }
     PanelFrame(stringResource(R.string.settings)) {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             itemsIndexed(rows) { i, (label, value, action) ->
-                TvRow(label, value, Modifier.fillMaxWidth().then(if (i == 0) Modifier.initialFocus() else Modifier)) { action() }
+                TvRow(
+                    label,
+                    value,
+                    Modifier
+                        .fillMaxWidth()
+                        .focusRequester(reqs[i])
+                        .onFocusChanged { if (it.isFocused) sel = i },
+                ) { action() }
             }
         }
     }
