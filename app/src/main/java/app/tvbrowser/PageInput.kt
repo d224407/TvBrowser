@@ -1,17 +1,21 @@
 package app.tvbrowser
 
 import android.app.Activity
+import android.os.Build
 import android.os.SystemClock
 import android.view.Choreographer
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.webkit.WebView
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.setValue
 import app.tvbrowser.data.Panel
 import app.tvbrowser.web.TabManager
+import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.min
 
 /** D-pad to page translation: virtual cursor, edge scrolling and global shortcuts. */
@@ -28,15 +32,24 @@ class PageInput(
     private val density = activity.resources.displayMetrics.density
 
     private companion object {
-        const val BASE_SPEED = 120f // dp/s
-        const val MAX_SPEED = 1100f // dp/s
-        const val ACCEL_TIME = 1.2f // s to reach max
+        const val BASE_SPEED = 220f // dp/s
+        const val MAX_SPEED = 2200f // dp/s
+        const val ACCEL_TIME = 0.8f // s to reach max
+        const val RESPONSE = 16f // velocity easing while held
+        const val DECEL = 12f // velocity easing after release
     }
     private var downTime = 0L
     private val pressed = HashSet<Int>()
     private var pressStart = 0L
     private var lastFrame = 0L
     private var running = false
+    private var vx = 0f
+    private var vy = 0f
+    private val scrollFactor: Float = if (Build.VERSION.SDK_INT >= 26) {
+        ViewConfiguration.get(activity).scaledVerticalScrollFactor
+    } else {
+        48f * activity.resources.displayMetrics.density
+    }
 
     /** Returns true when the key was consumed. Only called while the page owns focus. */
     fun handle(e: KeyEvent): Boolean {
@@ -99,10 +112,7 @@ class PageInput(
             vm.showChrome()
             return
         }
-        if (pressed.isEmpty()) {
-            pressStart = System.nanoTime()
-            lastFrame = 0L
-        }
+        if (pressed.isEmpty()) pressStart = System.nanoTime()
         pressed.add(code)
         if (!running) {
             running = true
@@ -112,16 +122,18 @@ class PageInput(
 
     private fun release(code: Int) {
         pressed.remove(code)
-        if (pressed.isEmpty()) lastFrame = 0L
     }
 
     private val frame = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             tick(frameTimeNanos)
-            if (pressed.isNotEmpty()) {
+            if (pressed.isNotEmpty() || abs(vx) > 4f || abs(vy) > 4f) {
                 Choreographer.getInstance().postFrameCallback(this)
             } else {
                 running = false
+                lastFrame = 0L
+                vx = 0f
+                vy = 0f
             }
         }
     }
@@ -130,6 +142,8 @@ class PageInput(
         val wv = mgr.activeWebView()
         if (wv == null || vm.panel != Panel.NONE || vm.chromeVisible || !vm.settings.cursorMode) {
             pressed.clear()
+            vx = 0f
+            vy = 0f
             return
         }
         val dt = if (lastFrame == 0L) 1f / 60f else min((t - lastFrame) / 1e9f, 0.05f)
@@ -140,42 +154,40 @@ class PageInput(
             (if (KeyEvent.KEYCODE_DPAD_LEFT in pressed) 1f else 0f)
         var dy = (if (KeyEvent.KEYCODE_DPAD_DOWN in pressed) 1f else 0f) -
             (if (KeyEvent.KEYCODE_DPAD_UP in pressed) 1f else 0f)
-        if (dx == 0f && dy == 0f) return
         if (dx != 0f && dy != 0f) {
             dx *= 0.7071f
             dy *= 0.7071f
         }
 
+        // Ease velocity toward the target: smooth start, smooth stop
+        val ratio = min(held / ACCEL_TIME, 1f)
+        val target = (BASE_SPEED + (MAX_SPEED - BASE_SPEED) * ratio * ratio) * density
+        val k = if (dx == 0f && dy == 0f) DECEL else RESPONSE
+        val a = 1f - exp(-k * dt)
+        vx += (dx * target - vx) * a
+        vy += (dy * target - vy) * a
+
         val w = wv.width.toFloat()
         val h = wv.height.toFloat()
-        val ratio = min(held / ACCEL_TIME, 1f)
-        val speed = (BASE_SPEED + (MAX_SPEED - BASE_SPEED) * ratio * ratio) * density
-        val bandV = 64f * density
-        val bandH = 48f * density
-        val amt = dt * 60f * (0.4f + 1.0f * ratio)
+        val rawX = cx + vx * dt
+        val rawY = cy + vy * dt
+        val nx = rawX.coerceIn(0f, w - 1f)
+        val ny = rawY.coerceIn(0f, h - 1f)
 
-        var nx = cx + dx * speed * dt
-        var ny = cy + dy * speed * dt
-
-        if (dy < 0f && cy < bandV && wv.canScrollVertically(-1)) {
-            scrollWheel(wv, cx, cy, amt)
-            ny = cy
-        } else if (dy > 0f && cy > h - bandV && wv.canScrollVertically(1)) {
-            scrollWheel(wv, cx, cy, -amt)
-            ny = cy
+        // Movement past the screen edge becomes 1:1 page scrolling
+        val overY = rawY - ny
+        val overX = rawX - nx
+        if (overY != 0f && wv.canScrollVertically(if (overY < 0f) -1 else 1)) {
+            scrollWheel(wv, nx, ny, -overY / scrollFactor)
         }
-        if (dx < 0f && cx < bandH && wv.canScrollHorizontally(-1)) {
-            scrollWheel(wv, cx, cy, 0f, amt)
-            nx = cx
-        } else if (dx > 0f && cx > w - bandH && wv.canScrollHorizontally(1)) {
-            scrollWheel(wv, cx, cy, 0f, -amt)
-            nx = cx
+        if (overX != 0f && wv.canScrollHorizontally(if (overX < 0f) -1 else 1)) {
+            scrollWheel(wv, nx, ny, 0f, -overX / scrollFactor)
         }
 
         val ox = cx
         val oy = cy
-        cx = nx.coerceIn(0f, w - 1f)
-        cy = ny.coerceIn(0f, h - 1f)
+        cx = nx
+        cy = ny
         if (cx != ox || cy != oy) dispatchMouse(wv, MotionEvent.ACTION_HOVER_MOVE, cx, cy, 0f, 0f)
     }
 
