@@ -36,4 +36,7 @@
     <string name="status_pending">Pending</string>
     <string name="error_title">Can\'t open this page</string>
     <string name="retry">Retry</string>
+    <string name="check_update">Check for updates</string>
+    <string name="up_to_date">Up to date</string>
+    <string name="update_failed">Check failed</string>
 </resources>

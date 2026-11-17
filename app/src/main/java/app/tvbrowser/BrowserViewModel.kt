@@ -1,6 +1,8 @@
 package app.tvbrowser
 
 import android.app.Application
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -15,8 +17,12 @@ import app.tvbrowser.data.Settings
 import app.tvbrowser.data.Store
 import app.tvbrowser.data.TabSnap
 import app.tvbrowser.data.TabState
+import app.tvbrowser.data.UpdateChecker
 import app.tvbrowser.data.UrlUtils
+import app.tvbrowser.web.Downloads
 import app.tvbrowser.web.TabManager
+
+enum class UpdateStatus { IDLE, CHECKING, LATEST, AVAILABLE, FAILED }
 
 class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     private val store = Store(app)
@@ -33,6 +39,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
         private set
     val bookmarks = mutableStateListOf<Bookmark>()
     val history = mutableStateListOf<HistoryItem>()
+
+    var updateStatus by mutableStateOf(UpdateStatus.IDLE)
+        private set
+    var updateVersion by mutableStateOf("")
+        private set
+    private var apkUrl: String? = null
+    private val main = Handler(Looper.getMainLooper())
 
     private var mgr: TabManager? = null
     private var idSeq = System.currentTimeMillis()
@@ -230,6 +243,38 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateFilters() {
         adBlock.update(getApplication(), settings.filterUrl)
+    }
+
+    /** First tap checks GitHub releases; once a newer APK is found the next tap downloads it. */
+    fun checkOrInstallUpdate() {
+        if (updateStatus == UpdateStatus.CHECKING) return
+        val url = apkUrl
+        if (updateStatus == UpdateStatus.AVAILABLE && url != null) {
+            if (Downloads.enqueue(getApplication(), url, null, null, "application/vnd.android.package-archive")) {
+                openPanel(Panel.DOWNLOADS)
+            }
+            return
+        }
+        val repo = BuildConfig.UPDATE_REPO
+        if (repo.isEmpty()) {
+            updateStatus = UpdateStatus.FAILED
+            return
+        }
+        updateStatus = UpdateStatus.CHECKING
+        Thread {
+            val r = runCatching { UpdateChecker.fetch(repo) }.getOrNull()
+            main.post {
+                if (r == null) {
+                    updateStatus = UpdateStatus.FAILED
+                } else if (r.apkUrl != null && UpdateChecker.isNewer(r.version, BuildConfig.VERSION_NAME)) {
+                    apkUrl = r.apkUrl
+                    updateVersion = r.version
+                    updateStatus = UpdateStatus.AVAILABLE
+                } else {
+                    updateStatus = UpdateStatus.LATEST
+                }
+            }
+        }.start()
     }
 
     fun clearCache() {

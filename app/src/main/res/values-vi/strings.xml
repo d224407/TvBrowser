@@ -36,4 +36,7 @@
     <string name="status_pending">Đang chờ</string>
     <string name="error_title">Không thể mở trang này</string>
     <string name="retry">Thử lại</string>
+    <string name="check_update">Kiểm tra cập nhật</string>
+    <string name="up_to_date">Đã là bản mới nhất</string>
+    <string name="update_failed">Kiểm tra thất bại</string>
 </resources>

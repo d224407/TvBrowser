@@ -34,6 +34,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.tvbrowser.BrowserViewModel
+import app.tvbrowser.BuildConfig
+import app.tvbrowser.UpdateStatus
 import app.tvbrowser.R
 import app.tvbrowser.data.Panel
 import app.tvbrowser.data.UrlUtils
@@ -232,6 +234,13 @@ private fun SettingsPanel(vm: BrowserViewModel, mgr: TabManager) {
     } else {
         "${vm.adBlock.ruleCount} ${stringResource(R.string.rules)}"
     }
+    val updateValue = when (vm.updateStatus) {
+        UpdateStatus.IDLE -> BuildConfig.VERSION_NAME
+        UpdateStatus.CHECKING -> "…"
+        UpdateStatus.LATEST -> stringResource(R.string.up_to_date)
+        UpdateStatus.AVAILABLE -> "v${vm.updateVersion}"
+        UpdateStatus.FAILED -> stringResource(R.string.update_failed)
+    }
     val rows = listOf<Triple<String, String, () -> Unit>>(
         Triple(stringResource(R.string.search_engine), UrlUtils.engines[s.searchEngine.coerceIn(0, UrlUtils.engines.lastIndex)].first) {
             vm.updateSettings(s.copy(searchEngine = (s.searchEngine + 1) % UrlUtils.engines.size))
@@ -256,13 +265,14 @@ private fun SettingsPanel(vm: BrowserViewModel, mgr: TabManager) {
         Triple(stringResource(R.string.third_party_cookies), if (s.thirdPartyCookies) on else off) {
             vm.updateSettings(s.copy(thirdPartyCookies = !s.thirdPartyCookies))
         },
+        Triple(stringResource(R.string.check_update), updateValue) { vm.checkOrInstallUpdate() },
         Triple(stringResource(R.string.clear_cache), "") { vm.clearCache() },
         Triple(stringResource(R.string.clear_cookies), "") { vm.clearCookies() },
         Triple(stringResource(R.string.clear_history), "") { vm.clearHistory() },
     )
     var sel by remember { mutableIntStateOf(0) }
     val reqs = remember { List(rows.size) { FocusRequester() } }
-    LaunchedEffect(s, vm.adBlock.busy, vm.adBlock.ruleCount) {
+    LaunchedEffect(s, vm.adBlock.busy, vm.adBlock.ruleCount, vm.updateStatus) {
         runCatching { reqs[sel].requestFocus() }
     }
     PanelFrame(stringResource(R.string.settings)) {

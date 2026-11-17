@@ -12,8 +12,9 @@ android {
         applicationId = "app.tvbrowser"
         minSdk = 23
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+        versionName = System.getenv("VERSION_NAME") ?: "1.0.0"
+        buildConfigField("String", "UPDATE_REPO", "\"${System.getenv("GITHUB_REPOSITORY") ?: ""}\"")
     }
 
     val ksPath = System.getenv("KEYSTORE_PATH")
@@ -46,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
