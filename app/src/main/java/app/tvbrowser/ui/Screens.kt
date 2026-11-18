@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +46,8 @@ fun BrowserRoot(vm: BrowserViewModel, mgr: TabManager, input: PageInput, onExit:
     val tab = vm.active
     val home = tab == null || tab.url.isEmpty()
     val overlay = vm.panel != Panel.NONE || vm.chromeVisible
+    val cursorVisible = !home && !overlay && vm.settings.cursorMode
+    SideEffect { input.setVisible(cursorVisible) }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (home) {
@@ -61,13 +64,6 @@ fun BrowserRoot(vm: BrowserViewModel, mgr: TabManager, input: PageInput, onExit:
             }
             if (vm.chromeVisible && vm.panel == Panel.NONE) {
                 Toolbar(vm, mgr, isHome = false, modifier = Modifier.align(Alignment.TopCenter))
-            }
-            if (!overlay && vm.settings.cursorMode && input.cx >= 0f) {
-                Canvas(Modifier.fillMaxSize()) {
-                    val c = Offset(input.cx, input.cy)
-                    drawCircle(Color.Black, 12.dp.toPx(), c)
-                    drawCircle(Color.White, 9.dp.toPx(), c)
-                }
             }
         }
         PanelHost(vm, mgr, onExit)

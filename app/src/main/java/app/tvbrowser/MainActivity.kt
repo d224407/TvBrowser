@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import app.tvbrowser.data.Panel
 import app.tvbrowser.ui.BrowserRoot
+import app.tvbrowser.ui.CursorView
 import app.tvbrowser.ui.TvTheme
 import app.tvbrowser.web.TabManager
 
@@ -30,7 +31,8 @@ class MainActivity : ComponentActivity() {
             visibility = View.GONE
         }
         mgr = TabManager(this, vm, (application as TvBrowserApp).adBlock, fullscreen)
-        input = PageInput(this, vm, mgr)
+        val cursor = CursorView(this)
+        input = PageInput(this, vm, mgr, cursor)
         vm.attach(mgr)
 
         setContent {
@@ -38,6 +40,10 @@ class MainActivity : ComponentActivity() {
                 BrowserRoot(vm, mgr, input, onExit = { finish() })
             }
         }
+        addContentView(
+            cursor,
+            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
         addContentView(
             fullscreen,
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),

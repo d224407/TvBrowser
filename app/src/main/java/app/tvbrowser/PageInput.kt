@@ -7,12 +7,11 @@ import android.view.Choreographer
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewConfiguration
 import android.webkit.WebView
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.setValue
 import app.tvbrowser.data.Panel
+import app.tvbrowser.ui.CursorView
 import app.tvbrowser.web.TabManager
 import kotlin.math.abs
 import kotlin.math.exp
@@ -23,11 +22,13 @@ class PageInput(
     activity: Activity,
     private val vm: BrowserViewModel,
     private val mgr: TabManager,
+    private val cursorView: CursorView,
 ) {
-    var cx by mutableFloatStateOf(-1f)
-        private set
-    var cy by mutableFloatStateOf(-1f)
-        private set
+    private var cx = -1f
+    private var cy = -1f
+    private var scrollAccX = 0f
+    private var scrollAccY = 0f
+    private var lastHover = 0L
 
     private val density = activity.resources.displayMetrics.density
 
@@ -37,6 +38,7 @@ class PageInput(
         const val ACCEL_TIME = 0.8f // s to reach max
         const val RESPONSE = 16f // velocity easing while held
         const val DECEL = 12f // velocity easing after release
+        const val HOVER_INTERVAL_NS = 60_000_000L
     }
     private var downTime = 0L
     private val pressed = HashSet<Int>()
@@ -102,7 +104,14 @@ class PageInput(
         if (cx < 0f || cy < 0f) {
             cx = wv.width / 2f
             cy = wv.height / 2f
+            cursorView.moveTo(cx, cy)
         }
+    }
+
+    /** Called from composition side effect whenever overlays or mode change. */
+    fun setVisible(visible: Boolean) {
+        cursorView.visibility = if (visible) View.VISIBLE else View.GONE
+        if (visible) mgr.activeWebView()?.let { ensureInit(it) }
     }
 
     private fun press(wv: WebView, code: Int, first: Boolean) {
@@ -177,18 +186,34 @@ class PageInput(
         // Movement past the screen edge becomes 1:1 page scrolling
         val overY = rawY - ny
         val overX = rawX - nx
-        if (overY != 0f && wv.canScrollVertically(if (overY < 0f) -1 else 1)) {
-            scrollWheel(wv, nx, ny, -overY / scrollFactor)
-        }
-        if (overX != 0f && wv.canScrollHorizontally(if (overX < 0f) -1 else 1)) {
-            scrollWheel(wv, nx, ny, 0f, -overX / scrollFactor)
+        scrollAccY = if (overY != 0f) scrollAccY + overY else 0f
+        scrollAccX = if (overX != 0f) scrollAccX + overX else 0f
+        val py = scrollAccY.toInt()
+        val px = scrollAccX.toInt()
+        if (py != 0 || px != 0) {
+            scrollAccY -= py
+            scrollAccX -= px
+            val canY = py != 0 && wv.canScrollVertically(py)
+            val canX = px != 0 && wv.canScrollHorizontally(px)
+            if (canY || canX) {
+                wv.scrollBy(if (canX) px else 0, if (canY) py else 0)
+            } else {
+                // Inner scrollers: fall back to wheel events
+                if (py != 0) scrollWheel(wv, nx, ny, -py / scrollFactor)
+                if (px != 0) scrollWheel(wv, nx, ny, 0f, -px / scrollFactor)
+            }
         }
 
-        val ox = cx
-        val oy = cy
+        val moved = nx != cx || ny != cy
         cx = nx
         cy = ny
-        if (cx != ox || cy != oy) dispatchMouse(wv, MotionEvent.ACTION_HOVER_MOVE, cx, cy, 0f, 0f)
+        if (moved) {
+            cursorView.moveTo(cx, cy)
+            if (t - lastHover > HOVER_INTERVAL_NS) {
+                lastHover = t
+                dispatchMouse(wv, MotionEvent.ACTION_HOVER_MOVE, cx, cy, 0f, 0f)
+            }
+        }
     }
 
     private fun scrollWheel(wv: WebView, x: Float, y: Float, vertical: Float, horizontal: Float = 0f) {

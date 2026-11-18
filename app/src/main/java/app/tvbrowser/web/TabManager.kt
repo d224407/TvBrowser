@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -172,6 +173,7 @@ class TabManager(
         val wv = WebView(activity)
         wv.isFocusable = true
         wv.isFocusableInTouchMode = true
+        if (Build.VERSION.SDK_INT >= 26) wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         applySettings(wv)
         wv.webViewClient = Client(tab)
         wv.webChromeClient = Chrome(tab)
@@ -193,6 +195,7 @@ class TabManager(
         val ws = wv.settings
         ws.javaScriptEnabled = s.javascript
         ws.domStorageEnabled = true
+        ws.setNeedInitialFocus(false)
         ws.useWideViewPort = true
         ws.loadWithOverviewMode = true
         ws.setSupportMultipleWindows(false)
@@ -245,10 +248,6 @@ class TabManager(
             pageHost = UrlUtils.host(url)
             tab.loading = true
             if (!url.startsWith(ERROR_PAGE)) tab.url = url
-        }
-
-        override fun onPageCommitVisible(view: WebView, url: String) {
-            injectCosmetic(view, url)
         }
 
         override fun onPageFinished(view: WebView, url: String) {

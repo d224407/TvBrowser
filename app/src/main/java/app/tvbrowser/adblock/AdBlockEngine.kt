@@ -263,7 +263,7 @@ class AdBlockEngine {
 
     companion object {
         private const val MAX_LIST_BYTES = 20L * 1024 * 1024
-        private const val MAX_GENERIC = 3000
+        private const val MAX_GENERIC = 600
 
         fun hostOf(lowerUrl: String): String {
             val s = lowerUrl.indexOf("://")
