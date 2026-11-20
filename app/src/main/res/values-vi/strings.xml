@@ -39,4 +39,5 @@
     <string name="check_update">Kiểm tra cập nhật</string>
     <string name="up_to_date">Đã là bản mới nhất</string>
     <string name="update_failed">Kiểm tra thất bại</string>
+    <string name="history_suggestions">Gợi ý từ lịch sử</string>
 </resources>

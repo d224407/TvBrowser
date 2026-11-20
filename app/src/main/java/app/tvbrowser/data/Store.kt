@@ -20,6 +20,7 @@ class Store(private val ctx: Context) {
             desktopMode = sp.getBoolean("desktop", d.desktopMode),
             textZoom = sp.getInt("zoom", d.textZoom),
             thirdPartyCookies = sp.getBoolean("3pc", d.thirdPartyCookies),
+            historySuggestions = sp.getBoolean("histsug", d.historySuggestions),
             filterUrl = sp.getString("filterUrl", d.filterUrl) ?: d.filterUrl,
         )
     }
@@ -33,6 +34,7 @@ class Store(private val ctx: Context) {
             .putBoolean("desktop", s.desktopMode)
             .putInt("zoom", s.textZoom)
             .putBoolean("3pc", s.thirdPartyCookies)
+            .putBoolean("histsug", s.historySuggestions)
             .putString("filterUrl", s.filterUrl)
             .apply()
     }

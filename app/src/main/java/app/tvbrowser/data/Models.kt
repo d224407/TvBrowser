@@ -31,5 +31,6 @@ data class Settings(
     val desktopMode: Boolean = false,
     val textZoom: Int = 100,
     val thirdPartyCookies: Boolean = true,
+    val historySuggestions: Boolean = true,
     val filterUrl: String = "https://easylist.to/easylist/easylist.txt",
 )

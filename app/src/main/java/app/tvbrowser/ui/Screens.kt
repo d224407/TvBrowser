@@ -131,6 +131,7 @@ fun Toolbar(vm: BrowserViewModel, mgr: TabManager, isHome: Boolean, modifier: Mo
             if (tab?.loading == true) "✕" else "⟳",
             enabled = tab != null && tab.url.isNotEmpty(),
         ) { tab?.let { mgr.reloadOrStop(it) } }
+        TvButton("⌂", enabled = tab != null && tab.url.isNotEmpty()) { vm.goHome() }
         TvButton(label, Modifier.weight(1f).focusRequester(address)) { vm.openPanel(Panel.ADDRESS) }
         TvButton("▢ ${vm.tabs.size}") { vm.openPanel(Panel.TABS) }
         TvButton(
@@ -143,7 +144,7 @@ fun Toolbar(vm: BrowserViewModel, mgr: TabManager, isHome: Boolean, modifier: Mo
 
 @Composable
 fun HomeScreen(vm: BrowserViewModel, mgr: TabManager) {
-    val recent = vm.history.distinctBy { UrlUtils.host(it.url) }.take(8)
+    val recent = if (vm.settings.historySuggestions) vm.history.distinctBy { UrlUtils.host(it.url) }.take(8) else emptyList()
     Column(Modifier.fillMaxSize()) {
         Toolbar(vm, mgr, isHome = true)
         Column(Modifier.padding(horizontal = 48.dp, vertical = 27.dp)) {

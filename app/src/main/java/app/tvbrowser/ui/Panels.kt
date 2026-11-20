@@ -262,6 +262,9 @@ private fun SettingsPanel(vm: BrowserViewModel, mgr: TabManager) {
             vm.updateSettings(s.copy(adBlock = !s.adBlock))
         },
         Triple(stringResource(R.string.update_filters), rules) { vm.updateFilters() },
+        Triple(stringResource(R.string.history_suggestions), if (s.historySuggestions) on else off) {
+            vm.updateSettings(s.copy(historySuggestions = !s.historySuggestions))
+        },
         Triple(stringResource(R.string.third_party_cookies), if (s.thirdPartyCookies) on else off) {
             vm.updateSettings(s.copy(thirdPartyCookies = !s.thirdPartyCookies))
         },
