@@ -1,7 +1,7 @@
 package app.tvbrowser.ui
 
 import android.view.ViewGroup
-import android.webkit.WebView
+import android.view.View
 import android.widget.FrameLayout
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -78,16 +78,17 @@ fun WebViewContainer(tab: app.tvbrowser.data.TabState, mgr: TabManager, blockFoc
         update = { c ->
             @Suppress("UNUSED_VARIABLE")
             val gen = tab.generation
-            val wv = mgr.webViewFor(tab)
+            val eng = mgr.engineFor(tab)
+            val wv = eng.view
             if (wv.parent !== c) {
-                (c.getChildAt(0) as? WebView)?.onPause()
+                mgr.engineOf(c.getChildAt(0))?.onPause()
                 c.removeAllViews()
                 (wv.parent as? ViewGroup)?.removeView(wv)
                 c.addView(
                     wv,
                     FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
                 )
-                wv.onResume()
+                eng.onResume()
             }
             c.descendantFocusability =
                 if (blockFocus) ViewGroup.FOCUS_BLOCK_DESCENDANTS else ViewGroup.FOCUS_AFTER_DESCENDANTS

@@ -8,12 +8,17 @@ on:
 permissions:
   contents: write
 
+env:
+  VERSION_CODE: ${{ github.run_number }}
+  VERSION_NAME: 1.0.${{ github.run_number }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      VERSION_CODE: ${{ github.run_number }}
-      VERSION_NAME: 1.0.${{ github.run_number }}
+    strategy:
+      fail-fast: true
+      matrix:
+        flavor: [generic, gecko]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -27,15 +32,52 @@ jobs:
         env:
           KEYSTORE_CONTENT: ${{ secrets.KEYSTORE_CONTENT }}
         run: echo "$KEYSTORE_CONTENT" | base64 -d > "$RUNNER_TEMP/release.jks"
-      - name: Build release APK
+      - name: Build generic
+        if: matrix.flavor == 'generic'
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/release.jks
           KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: gradle assembleRelease --no-daemon
+        run: gradle assembleGenericRelease --no-daemon
+      - name: Build gecko (one APK per ABI)
+        if: matrix.flavor == 'gecko'
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: gradle assembleGeckoRelease -PabiSplit --no-daemon
+      - name: Collect APKs
+        run: |
+          mkdir dist
+          for f in app/build/outputs/apk/${{ matrix.flavor }}/release/*.apk; do
+            n=${f##*/}
+            if [ "${{ matrix.flavor }}" = generic ]; then
+              cp "$f" dist/TvBrowser-generic.apk
+            else
+              n=${n#app-gecko-}
+              n=${n%-release*}
+              cp "$f" "dist/TvBrowser-gecko-$n.apk"
+            fi
+          done
+          ls -l dist
+      - uses: actions/upload-artifact@v5
+        with:
+          name: apk-${{ matrix.flavor }}
+          path: dist/*.apk
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: apk-*
+          path: dist
+          merge-multiple: true
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/release/*.apk TvBrowser.apk
-          gh release create "v$VERSION_NAME" TvBrowser.apk --title "v$VERSION_NAME" --generate-notes
+          gh release create "v$VERSION_NAME" dist/*.apk --repo "$GITHUB_REPOSITORY" \
+            --title "v$VERSION_NAME" --generate-notes

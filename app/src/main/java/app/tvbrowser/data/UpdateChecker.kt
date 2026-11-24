@@ -1,5 +1,7 @@
 package app.tvbrowser.data
 
+import android.os.Build
+import app.tvbrowser.BuildConfig
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -18,21 +20,27 @@ object UpdateChecker {
             val version = json.optString("tag_name").removePrefix("v")
             if (version.isEmpty()) return null
             val assets = json.optJSONArray("assets")
-            var apk: String? = null
+            val urls = HashMap<String, String>()
             if (assets != null) {
                 for (i in 0 until assets.length()) {
                     val a = assets.getJSONObject(i)
-                    if (a.optString("name").endsWith(".apk")) {
-                        apk = a.optString("browser_download_url")
-                        break
-                    }
+                    urls[a.optString("name")] = a.optString("browser_download_url")
                 }
             }
+            val apk = candidates().firstNotNullOfOrNull { urls[it] }
             return Release(version, apk)
         } finally {
             conn.disconnect()
         }
     }
+
+    /** Asset names for this build, best match first. */
+    private fun candidates(): List<String> =
+        if (BuildConfig.FLAVOR == "gecko") {
+            Build.SUPPORTED_ABIS.map { "TvBrowser-gecko-$it.apk" }
+        } else {
+            listOf("TvBrowser-generic.apk")
+        }
 
     fun isNewer(remote: String, local: String): Boolean {
         val r = remote.split('.').map { it.toIntOrNull() ?: 0 }

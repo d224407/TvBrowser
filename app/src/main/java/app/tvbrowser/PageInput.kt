@@ -11,12 +11,12 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
-import android.webkit.WebView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import app.tvbrowser.data.Panel
 import app.tvbrowser.ui.CursorView
 import app.tvbrowser.web.TabManager
+import app.tvbrowser.web.WebEngine
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.min
@@ -52,16 +52,12 @@ class PageInput(
 
     // Long press on a link or image opens the context panel
     private val longPress = Runnable {
-        val wv = mgr.activeWebView()
-        if (wv != null && touching) {
-            touch(wv, MotionEvent.ACTION_CANCEL)
+        val e = mgr.activeEngine()
+        if (e != null && touching) {
+            touch(e.view, MotionEvent.ACTION_CANCEL)
             touching = false
             longFired = true
-            val msg = Handler(Looper.getMainLooper()) { m ->
-                vm.openContext(m.data.getString("url"), m.data.getString("src"))
-                true
-            }.obtainMessage()
-            wv.requestFocusNodeHref(msg)
+            e.linkAtTouch { link, img -> vm.openContext(link, img) }
         }
     }
     private val pressed = HashSet<Int>()
@@ -79,7 +75,8 @@ class PageInput(
     /** Returns true when the key was consumed. Only called while the page owns focus. */
     fun handle(e: KeyEvent): Boolean {
         if (mgr.isFullscreen) return false
-        val wv = mgr.activeWebView() ?: return false
+        val eng = mgr.activeEngine() ?: return false
+        val wv = eng.view
         val down = e.action == KeyEvent.ACTION_DOWN
 
         when (e.keyCode) {
@@ -106,7 +103,7 @@ class PageInput(
         when (e.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (down) press(wv, e.keyCode, e.repeatCount == 0) else release(e.keyCode)
+                if (down) press(eng, e.keyCode, e.repeatCount == 0) else release(e.keyCode)
                 return true
             }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
@@ -131,7 +128,7 @@ class PageInput(
     private fun imeVisible(): Boolean =
         ViewCompat.getRootWindowInsets(cursorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
 
-    private fun ensureInit(wv: WebView) {
+    private fun ensureInit(wv: View) {
         if (cx < 0f || cy < 0f) {
             cx = wv.width / 2f
             cy = wv.height / 2f
@@ -142,13 +139,13 @@ class PageInput(
     /** Called from composition side effect whenever overlays or mode change. */
     fun setVisible(visible: Boolean) {
         cursorView.visibility = if (visible) View.VISIBLE else View.GONE
-        if (visible) mgr.activeWebView()?.let { ensureInit(it) }
+        if (visible) mgr.activeEngine()?.let { ensureInit(it.view) }
     }
 
-    private fun press(wv: WebView, code: Int, first: Boolean) {
+    private fun press(eng: WebEngine, code: Int, first: Boolean) {
         if (!first) return
-        ensureInit(wv)
-        if (code == KeyEvent.KEYCODE_DPAD_UP && cy <= 2f && !wv.canScrollVertically(-1)) {
+        ensureInit(eng.view)
+        if (code == KeyEvent.KEYCODE_DPAD_UP && cy <= 2f && !eng.canScrollV(-1)) {
             vm.showChrome()
             return
         }
@@ -179,13 +176,14 @@ class PageInput(
     }
 
     private fun tick(t: Long) {
-        val wv = mgr.activeWebView()
-        if (wv == null || vm.panel != Panel.NONE || vm.chromeVisible || !vm.settings.cursorMode) {
+        val eng = mgr.activeEngine()
+        if (eng == null || vm.panel != Panel.NONE || vm.chromeVisible || !vm.settings.cursorMode) {
             pressed.clear()
             vx = 0f
             vy = 0f
             return
         }
+        val wv = eng.view
         val dt = if (lastFrame == 0L) 1f / 60f else min((t - lastFrame) / 1e9f, 0.05f)
         lastFrame = t
         val held = (t - pressStart) / 1e9f
@@ -224,12 +222,8 @@ class PageInput(
         if (py != 0 || px != 0) {
             scrollAccY -= py
             scrollAccX -= px
-            val canY = py != 0 && wv.canScrollVertically(py)
-            val canX = px != 0 && wv.canScrollHorizontally(px)
-            if (canY || canX) {
-                wv.scrollBy(if (canX) px else 0, if (canY) py else 0)
-            } else {
-                // Inner scrollers: fall back to wheel events
+            if (!eng.scrollBy(px, py)) {
+                // Inner scrollers or engines without native scroll: wheel events
                 if (py != 0) scrollWheel(wv, nx, ny, -py / scrollFactor)
                 if (px != 0) scrollWheel(wv, nx, ny, 0f, -px / scrollFactor)
             }
@@ -247,11 +241,11 @@ class PageInput(
         }
     }
 
-    private fun scrollWheel(wv: WebView, x: Float, y: Float, vertical: Float, horizontal: Float = 0f) {
+    private fun scrollWheel(wv: View, x: Float, y: Float, vertical: Float, horizontal: Float = 0f) {
         dispatchMouse(wv, MotionEvent.ACTION_SCROLL, x, y, vertical, horizontal)
     }
 
-    private fun dispatchMouse(wv: WebView, action: Int, x: Float, y: Float, vs: Float, hs: Float) {
+    private fun dispatchMouse(wv: View, action: Int, x: Float, y: Float, vs: Float, hs: Float) {
         val now = SystemClock.uptimeMillis()
         val props = MotionEvent.PointerProperties().apply {
             id = 0
@@ -273,7 +267,7 @@ class PageInput(
         ev.recycle()
     }
 
-    private fun touch(wv: WebView, action: Int) {
+    private fun touch(wv: View, action: Int) {
         val now = SystemClock.uptimeMillis()
         if (action == MotionEvent.ACTION_DOWN) downTime = now
         val ev = MotionEvent.obtain(downTime, now, action, cx, cy, 0)

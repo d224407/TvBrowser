@@ -194,9 +194,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
             showChrome()
             return true
         }
-        val wv = mgr?.activeWebView()
-        if (wv != null && wv.canGoBack()) {
-            wv.goBack()
+        val e = mgr?.activeEngine()
+        if (e != null && e.canGoBack) {
+            e.goBack()
             return true
         }
         if (tabs.size > 1) {

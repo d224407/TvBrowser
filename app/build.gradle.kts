@@ -17,6 +17,27 @@ android {
         buildConfigField("String", "UPDATE_REPO", "\"${System.getenv("GITHUB_REPOSITORY") ?: ""}\"")
     }
 
+    flavorDimensions += "engine"
+    productFlavors {
+        create("generic") {
+            dimension = "engine"
+        }
+        create("gecko") {
+            dimension = "engine"
+            minSdk = 26
+        }
+    }
+
+    // Only the gecko flavor is split per ABI (-PabiSplit)
+    splits {
+        abi {
+            isEnable = project.hasProperty("abiSplit")
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     val ksPath = System.getenv("KEYSTORE_PATH")
     signingConfigs {
         if (ksPath != null) {
@@ -63,4 +84,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+
+    "geckoImplementation"("org.mozilla.geckoview:geckoview:147.0.20260212191108")
 }

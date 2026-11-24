@@ -4,12 +4,10 @@ import android.app.AlertDialog
 import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -19,6 +17,7 @@ import app.tvbrowser.data.Panel
 import app.tvbrowser.ui.BrowserRoot
 import app.tvbrowser.ui.CursorView
 import app.tvbrowser.ui.TvTheme
+import app.tvbrowser.web.Engines
 import app.tvbrowser.web.TabManager
 
 class MainActivity : ComponentActivity() {
@@ -29,7 +28,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (Build.VERSION.SDK_INT >= 26 && WebView.getCurrentWebViewPackage() == null) {
+        if (!Engines.available()) {
             AlertDialog.Builder(this)
                 .setMessage(R.string.webview_missing)
                 .setOnDismissListener { finish() }
@@ -93,8 +92,8 @@ class MainActivity : ComponentActivity() {
             if (input.handle(event)) return true
             val handled = super.dispatchKeyEvent(event)
             if (!handled && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-                val wv = mgr.activeWebView()
-                if (wv != null && !mgr.isFullscreen && !wv.canScrollVertically(-1)) vm.showChrome()
+                val e = mgr.activeEngine()
+                if (e != null && !mgr.isFullscreen && !e.canScrollV(-1)) vm.showChrome()
             }
             return handled
         }

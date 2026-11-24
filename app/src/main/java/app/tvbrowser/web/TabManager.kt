@@ -3,50 +3,31 @@ package app.tvbrowser.web
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.Context
-import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.webkit.CookieManager
-import android.webkit.GeolocationPermissions
-import android.webkit.JsResult
-import android.webkit.PermissionRequest
-import android.net.http.SslError
-import android.webkit.RenderProcessGoneDetail
-import android.webkit.SslErrorHandler
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebStorage
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
-import app.tvbrowser.R
 import app.tvbrowser.BrowserViewModel
+import app.tvbrowser.R
 import app.tvbrowser.adblock.AdBlockEngine
 import app.tvbrowser.data.Panel
+import app.tvbrowser.data.Settings
 import app.tvbrowser.data.TabState
 import app.tvbrowser.data.UrlUtils
-import org.json.JSONObject
-import java.io.ByteArrayInputStream
 
-/** Owns WebView instances: creation, LRU eviction, lifecycle and client wiring. */
+/** Owns engine instances: creation, LRU eviction, lifecycle and event wiring. */
 class TabManager(
     private val activity: ComponentActivity,
     private val vm: BrowserViewModel,
     private val adBlock: AdBlockEngine,
     private val fullscreenHost: FrameLayout,
 ) {
-    private val views = LinkedHashMap<Long, WebView>(8, 0.75f, true)
+    private val engines = LinkedHashMap<Long, WebEngine>(8, 0.75f, true)
     private val saved = HashMap<Long, Bundle>()
     private val handler = Handler(Looper.getMainLooper())
 
@@ -55,49 +36,46 @@ class TabManager(
 
     private val sslAllowed = HashSet<String>()
     private var customView: View? = null
-    private var customCallback: WebChromeClient.CustomViewCallback? = null
+    private var fullscreenOn = false
+    private var onHidden: (() -> Unit)? = null
 
     private val maxLive: Int = run {
         val am = activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         if (am.isLowRamDevice) 2 else 4
     }
 
-    private val defaultUa: String by lazy { WebSettings.getDefaultUserAgent(activity) }
-    private val desktopUa: String by lazy {
-        val v = Regex("Chrome/([\\d.]+)").find(defaultUa)?.groupValues?.get(1) ?: "120.0.0.0"
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$v Safari/537.36"
-    }
+    val isFullscreen: Boolean get() = fullscreenOn
 
-    val isFullscreen: Boolean get() = customView != null
+    fun activeEngine(): WebEngine? = engines[vm.activeId]
 
-    fun activeWebView(): WebView? = views[vm.activeId]
-
-    fun webViewFor(tab: TabState): WebView {
-        views[tab.id]?.let { return it }
-        val wv = create(tab)
-        views[tab.id] = wv
+    fun engineFor(tab: TabState): WebEngine {
+        engines[tab.id]?.let { return it }
+        val e = create(tab)
+        engines[tab.id] = e
         evictExtra()
-        return wv
+        return e
     }
+
+    fun engineOf(v: View?): WebEngine? = engines.values.firstOrNull { it.view === v }
 
     fun load(tab: TabState, url: String) {
         tab.url = url
         tab.title = ""
-        val existing = views[tab.id]
-        if (existing != null) existing.loadUrl(url) else webViewFor(tab)
+        val existing = engines[tab.id]
+        if (existing != null) existing.load(url) else engineFor(tab)
     }
 
     fun goBack() {
-        activeWebView()?.let { if (it.canGoBack()) it.goBack() }
+        activeEngine()?.let { if (it.canGoBack) it.goBack() }
     }
 
     fun goForward() {
-        activeWebView()?.let { if (it.canGoForward()) it.goForward() }
+        activeEngine()?.let { if (it.canGoForward) it.goForward() }
     }
 
     fun reloadOrStop(tab: TabState) {
-        val wv = views[tab.id] ?: return
-        if (tab.loading) wv.stopLoading() else wv.reload()
+        val e = engines[tab.id] ?: return
+        if (tab.loading) e.stop() else e.reload()
     }
 
     fun destroy(id: Long) {
@@ -107,126 +85,77 @@ class TabManager(
 
     fun destroyAll() {
         exitFullscreen()
-        views.keys.toList().forEach { dispose(it, keepState = false) }
+        engines.keys.toList().forEach { dispose(it, keepState = false) }
     }
 
     fun pause() {
-        CookieManager.getInstance().flush()
-        activeWebView()?.onPause()
-        views.values.firstOrNull()?.pauseTimers()
+        Engines.flush()
+        activeEngine()?.onPause()
+        engines.values.firstOrNull()?.pauseTimers()
     }
 
     fun resume() {
-        views.values.firstOrNull()?.resumeTimers()
-        activeWebView()?.onResume()
+        engines.values.firstOrNull()?.resumeTimers()
+        activeEngine()?.onResume()
     }
 
-    /** Keep only the active WebView; others keep their state in memory. */
+    /** Keep only the active engine; others keep their state in memory. */
     fun trim() {
-        views.keys.toList().filter { it != vm.activeId }.forEach { dispose(it, keepState = true) }
+        engines.keys.toList().filter { it != vm.activeId }.forEach { dispose(it, keepState = true) }
     }
 
     fun exitFullscreen(): Boolean {
-        val v = customView ?: return false
-        val cb = customCallback
-        customView = null
-        customCallback = null
-        fullscreenHost.removeView(v)
-        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        fullscreenHost.visibility = View.GONE
-        cb?.onCustomViewHidden()
+        if (!fullscreenOn) return false
+        val cb = onHidden
+        clearFullscreen()
+        cb?.invoke()
         return true
     }
 
-    fun clearCache() {
-        activeWebView()?.clearCache(true)
+    private fun clearFullscreen() {
+        customView?.let { fullscreenHost.removeView(it) }
+        customView = null
+        onHidden = null
+        fullscreenOn = false
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        fullscreenHost.visibility = View.GONE
     }
 
-    fun clearCookies() {
-        CookieManager.getInstance().removeAllCookies(null)
-        CookieManager.getInstance().flush()
-        WebStorage.getInstance().deleteAllData()
-    }
+    fun clearCache() = Engines.clearCache(activeEngine())
+
+    fun clearCookies() = Engines.clearCookies()
 
     fun applySettingsToAll(reloadForUa: Boolean) {
         adBlockOn = vm.settings.adBlock
-        for ((id, wv) in views) {
-            applySettings(wv)
-            if (reloadForUa && id == vm.activeId) wv.reload()
+        for ((id, e) in engines) {
+            e.applySettings(vm.settings)
+            if (reloadForUa && id == vm.activeId) e.reload()
         }
     }
 
     private fun evictExtra() {
-        while (views.size > maxLive) {
-            val victim = views.keys.firstOrNull { it != vm.activeId } ?: return
+        while (engines.size > maxLive) {
+            val victim = engines.keys.firstOrNull { it != vm.activeId } ?: return
             dispose(victim, keepState = true)
         }
     }
 
     private fun dispose(id: Long, keepState: Boolean) {
-        val wv = views.remove(id) ?: return
-        if (keepState) {
-            val b = Bundle()
-            wv.saveState(b)
-            saved[id] = b
-        }
-        (wv.parent as? ViewGroup)?.removeView(wv)
-        wv.stopLoading()
-        wv.destroy()
+        val e = engines.remove(id) ?: return
+        if (keepState) e.saveState()?.let { saved[id] = it }
+        e.destroy()
     }
 
-    private fun create(tab: TabState): WebView {
-        val wv = WebView(activity)
-        wv.isFocusable = true
-        wv.isFocusableInTouchMode = true
-        if (Build.VERSION.SDK_INT >= 26) wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
-        applySettings(wv)
-        wv.webViewClient = Client(tab)
-        wv.webChromeClient = Chrome(tab)
-        wv.setDownloadListener { url, ua, cd, mime, _ ->
-            if (Downloads.enqueue(activity, url, ua, cd, mime)) vm.openPanel(Panel.DOWNLOADS)
-        }
+    private fun create(tab: TabState): WebEngine {
         adBlockOn = vm.settings.adBlock
+        val e = Engines.create(activity, TabHost(tab))
         val state = saved.remove(tab.id)
-        if (state != null && wv.restoreState(state) != null) {
+        if (state != null && e.restoreState(state)) {
             // restored from memory
         } else if (tab.url.isNotEmpty()) {
-            wv.loadUrl(tab.url)
+            e.load(tab.url)
         }
-        return wv
-    }
-
-    private fun applySettings(wv: WebView) {
-        val s = vm.settings
-        val ws = wv.settings
-        ws.javaScriptEnabled = s.javascript
-        ws.domStorageEnabled = true
-        ws.setNeedInitialFocus(false)
-        ws.useWideViewPort = true
-        ws.loadWithOverviewMode = true
-        ws.setSupportMultipleWindows(false)
-        ws.javaScriptCanOpenWindowsAutomatically = false
-        ws.allowFileAccess = false
-        ws.allowContentAccess = false
-        ws.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-        ws.textZoom = s.textZoom
-        ws.userAgentString = if (s.desktopMode) desktopUa else defaultUa
-        CookieManager.getInstance().apply {
-            setAcceptCookie(true)
-            setAcceptThirdPartyCookies(wv, s.thirdPartyCookies)
-        }
-    }
-
-    private fun injectCosmetic(view: WebView, url: String) {
-        if (!adBlockOn) return
-        val host = UrlUtils.host(url)
-        if (host.isEmpty()) return
-        val css = adBlock.cosmeticCss(host)
-        if (css.isEmpty()) return
-        val js = "(function(){var s=document.getElementById('__tvb');if(!s){s=document.createElement('style');" +
-            "s.id='__tvb';(document.head||document.documentElement).appendChild(s)}s.textContent=" +
-            JSONObject.quote(css) + "})()"
-        view.evaluateJavascript(js, null)
+        return e
     }
 
     private fun errorPage(failing: String, desc: String, ssl: Boolean): String {
@@ -235,158 +164,103 @@ class TabManager(
             "&r=" + Uri.encode(activity.getString(R.string.retry)) +
             "&u=" + Uri.encode(failing)
         if (ssl) q += "&x=" + Uri.encode(activity.getString(R.string.ssl_continue))
-        return ERROR_PAGE + q
+        return Engines.ERROR_PAGE + q
     }
 
-    private inner class Client(val tab: TabState) : WebViewClient() {
-        @Volatile
-        private var pageHost = ""
+    private inner class TabHost(val tab: TabState) : EngineHost {
+        private val engine: WebEngine? get() = engines[tab.id]
 
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val scheme = request.url.scheme?.lowercase()
-            if (scheme == "tvb-proceed") {
-                val u = request.url.getQueryParameter("u")
-                if (u != null) {
-                    sslAllowed.add(UrlUtils.host(u))
-                    view.loadUrl(u)
-                }
-                return true
-            }
-            return scheme !in INTERNAL_SCHEMES
-        }
+        override val adBlockOn: Boolean get() = this@TabManager.adBlockOn
 
-        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-            if (!adBlockOn || request.isForMainFrame) return null
-            val url = request.url.toString()
-            if (!url.startsWith("http")) return null
-            val type = AdBlockEngine.guessType(url, request.requestHeaders?.get("Accept"))
-            return if (adBlock.shouldBlock(url, pageHost, type)) {
-                WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
-            } else {
-                null
-            }
-        }
+        override fun shouldBlock(url: String, pageHost: String, accept: String?): Boolean =
+            adBlock.shouldBlock(url, pageHost, AdBlockEngine.guessType(url, accept))
 
-        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-            pageHost = UrlUtils.host(url)
+        override fun cosmeticCss(host: String): String = adBlock.cosmeticCss(host)
+
+        override fun pageStarted(url: String) {
             tab.loading = true
-            if (!url.startsWith(ERROR_PAGE)) tab.url = url
+            if (!url.startsWith(Engines.ERROR_PAGE)) tab.url = url
         }
 
-        override fun onPageFinished(view: WebView, url: String) {
+        override fun pageFinished(url: String) {
             tab.loading = false
-            tab.canBack = view.canGoBack()
-            tab.canForward = view.canGoForward()
-            if (url.startsWith(ERROR_PAGE)) return
-            tab.title = view.title.orEmpty()
-            injectCosmetic(view, url)
+            if (url.startsWith(Engines.ERROR_PAGE)) return
+            tab.title = engine?.title.orEmpty()
             if (url.startsWith("http")) vm.recordVisit(url, tab.title)
             vm.persistTabs()
         }
 
-        override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
-            if (!url.startsWith(ERROR_PAGE)) tab.url = url
-            tab.canBack = view.canGoBack()
-            tab.canForward = view.canGoForward()
+        override fun urlChanged(url: String) {
+            if (!url.startsWith(Engines.ERROR_PAGE)) tab.url = url
         }
 
-        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (!request.isForMainFrame) return
-            val failing = request.url.toString()
-            tab.url = failing
-            view.loadUrl(errorPage(failing, error.description.toString(), false))
-        }
-
-        override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-            val failing = error.url
-            if (UrlUtils.host(failing) in sslAllowed) {
-                handler.proceed()
-                return
-            }
-            handler.cancel()
-            tab.url = failing
-            view.loadUrl(errorPage(failing, activity.getString(R.string.ssl_error), true))
-        }
-
-        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-            handler.post {
-                dispose(tab.id, keepState = false)
-                tab.generation++
-            }
-            return true
-        }
-    }
-
-    private inner class Chrome(val tab: TabState) : WebChromeClient() {
-        override fun onProgressChanged(view: WebView, newProgress: Int) {
-            tab.progress = newProgress
-        }
-
-        override fun onReceivedTitle(view: WebView, title: String?) {
-            if (title.isNullOrEmpty() || view.url?.startsWith(ERROR_PAGE) == true) return
+        override fun titleChanged(title: String) {
             tab.title = title
         }
 
-        override fun onShowCustomView(view: View, callback: WebChromeClient.CustomViewCallback) {
-            if (customView != null) {
-                callback.onCustomViewHidden()
+        override fun progress(p: Int) {
+            tab.progress = p
+        }
+
+        override fun navState(back: Boolean, forward: Boolean) {
+            tab.canBack = back
+            tab.canForward = forward
+        }
+
+        override fun error(failing: String, desc: String, ssl: Boolean) {
+            tab.url = failing
+        }
+
+        override fun errorPageUrl(failing: String, desc: String, ssl: Boolean): String =
+            errorPage(failing, if (ssl) activity.getString(R.string.ssl_error) else desc, ssl)
+
+        override fun isSslAllowed(host: String): Boolean = host in sslAllowed
+
+        override fun allowSsl(host: String) {
+            sslAllowed.add(host)
+        }
+
+        override fun fullscreen(on: Boolean, view: View?, onHidden: (() -> Unit)?) {
+            if (!on) {
+                if (fullscreenOn) clearFullscreen()
                 return
             }
-            customView = view
-            customCallback = callback
-            fullscreenHost.addView(
-                view,
-                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
-            )
-            fullscreenHost.visibility = View.VISIBLE
+            if (fullscreenOn) {
+                onHidden?.invoke()
+                return
+            }
+            fullscreenOn = true
+            this@TabManager.onHidden = onHidden
+            if (view != null) {
+                customView = view
+                fullscreenHost.addView(
+                    view,
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+                )
+                fullscreenHost.visibility = View.VISIBLE
+                view.requestFocus()
+            }
             activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            view.requestFocus()
         }
 
-        override fun onHideCustomView() {
-            exitFullscreen()
+        override fun download(url: String, ua: String?, disposition: String?, mime: String?) {
+            if (Downloads.enqueue(activity, url, ua, disposition, mime)) vm.openPanel(Panel.DOWNLOADS)
         }
 
-        override fun onPermissionRequest(request: PermissionRequest) {
-            val ok = request.resources.filter { it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID }
-            if (ok.isNotEmpty()) request.grant(ok.toTypedArray()) else request.deny()
+        override fun gone() {
+            dispose(tab.id, keepState = false)
+            tab.generation++
         }
 
-        override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) {
-            callback.invoke(origin, false, false)
-        }
-
-        override fun onShowFileChooser(
-            webView: WebView,
-            filePathCallback: ValueCallback<Array<Uri>>,
-            fileChooserParams: WebChromeClient.FileChooserParams,
-        ): Boolean {
-            filePathCallback.onReceiveValue(null)
-            return true
-        }
-
-        override fun onJsAlert(view: WebView, url: String, message: String, result: JsResult): Boolean {
-            AlertDialog.Builder(activity)
+        override fun dialog(message: String, confirm: Boolean, result: (Boolean) -> Unit) {
+            val b = AlertDialog.Builder(activity)
                 .setMessage(message)
-                .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
-                .setOnCancelListener { result.cancel() }
-                .show()
-            return true
+                .setPositiveButton(android.R.string.ok) { _, _ -> result(true) }
+                .setOnCancelListener { result(false) }
+            if (confirm) b.setNegativeButton(android.R.string.cancel) { _, _ -> result(false) }
+            b.show()
         }
 
-        override fun onJsConfirm(view: WebView, url: String, message: String, result: JsResult): Boolean {
-            AlertDialog.Builder(activity)
-                .setMessage(message)
-                .setPositiveButton(android.R.string.ok) { _, _ -> result.confirm() }
-                .setNegativeButton(android.R.string.cancel) { _, _ -> result.cancel() }
-                .setOnCancelListener { result.cancel() }
-                .show()
-            return true
-        }
-    }
-
-    companion object {
-        const val ERROR_PAGE = "file:///android_asset/error.html"
-        private val INTERNAL_SCHEMES = setOf("http", "https", "about", "data", "blob", "javascript", "file")
+        override fun settings(): Settings = vm.settings
     }
 }
