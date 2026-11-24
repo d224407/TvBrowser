@@ -136,7 +136,11 @@ class GeckoEngine(
 
             override fun onKill(session: GeckoSession) = host.gone()
         }
-        session.scrollDelegate = GeckoSession.ScrollDelegate { _, _, y -> scrollY = y }
+        session.scrollDelegate = object : GeckoSession.ScrollDelegate {
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) {
+                this@GeckoEngine.scrollY = scrollY
+            }
+        }
 
         session.open(runtime)
         geckoView.setSession(session)
