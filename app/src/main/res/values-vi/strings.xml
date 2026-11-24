@@ -40,4 +40,12 @@
     <string name="up_to_date">Đã là bản mới nhất</string>
     <string name="update_failed">Kiểm tra thất bại</string>
     <string name="history_suggestions">Gợi ý từ lịch sử</string>
+    <string name="open_link">Mở liên kết</string>
+    <string name="open_new_tab">Mở trong tab mới</string>
+    <string name="copy_link">Sao chép liên kết</string>
+    <string name="open_image">Mở ảnh trong tab mới</string>
+    <string name="download_image">Tải ảnh</string>
+    <string name="ssl_error">Kết nối không riêng tư</string>
+    <string name="ssl_continue">Vẫn tiếp tục</string>
+    <string name="webview_missing">Chưa cài Android System WebView</string>
 </resources>

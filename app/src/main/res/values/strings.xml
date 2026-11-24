@@ -40,4 +40,12 @@
     <string name="up_to_date">Up to date</string>
     <string name="update_failed">Check failed</string>
     <string name="history_suggestions">History suggestions</string>
+    <string name="open_link">Open link</string>
+    <string name="open_new_tab">Open in new tab</string>
+    <string name="copy_link">Copy link</string>
+    <string name="open_image">Open image in new tab</string>
+    <string name="download_image">Download image</string>
+    <string name="ssl_error">Connection is not private</string>
+    <string name="ssl_continue">Continue anyway</string>
+    <string name="webview_missing">Android System WebView is not installed</string>
 </resources>

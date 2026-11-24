@@ -5,7 +5,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
-enum class Panel { NONE, MENU, TABS, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, ADDRESS }
+enum class Panel { NONE, MENU, TABS, BOOKMARKS, HISTORY, DOWNLOADS, SETTINGS, ADDRESS, CONTEXT }
 
 class TabState(val id: Long, url: String = "", title: String = "") {
     var url by mutableStateOf(url)

@@ -16,7 +16,9 @@ import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.JsResult
 import android.webkit.PermissionRequest
+import android.net.http.SslError
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -51,6 +53,7 @@ class TabManager(
     @Volatile
     var adBlockOn = true
 
+    private val sslAllowed = HashSet<String>()
     private var customView: View? = null
     private var customCallback: WebChromeClient.CustomViewCallback? = null
 
@@ -226,12 +229,29 @@ class TabManager(
         view.evaluateJavascript(js, null)
     }
 
+    private fun errorPage(failing: String, desc: String, ssl: Boolean): String {
+        var q = "?t=" + Uri.encode(activity.getString(R.string.error_title)) +
+            "&d=" + Uri.encode(desc) +
+            "&r=" + Uri.encode(activity.getString(R.string.retry)) +
+            "&u=" + Uri.encode(failing)
+        if (ssl) q += "&x=" + Uri.encode(activity.getString(R.string.ssl_continue))
+        return ERROR_PAGE + q
+    }
+
     private inner class Client(val tab: TabState) : WebViewClient() {
         @Volatile
         private var pageHost = ""
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val scheme = request.url.scheme?.lowercase()
+            if (scheme == "tvb-proceed") {
+                val u = request.url.getQueryParameter("u")
+                if (u != null) {
+                    sslAllowed.add(UrlUtils.host(u))
+                    view.loadUrl(u)
+                }
+                return true
+            }
             return scheme !in INTERNAL_SCHEMES
         }
 
@@ -274,11 +294,18 @@ class TabManager(
             if (!request.isForMainFrame) return
             val failing = request.url.toString()
             tab.url = failing
-            val q = "?t=" + Uri.encode(activity.getString(R.string.error_title)) +
-                "&d=" + Uri.encode(error.description.toString()) +
-                "&r=" + Uri.encode(activity.getString(R.string.retry)) +
-                "&u=" + Uri.encode(failing)
-            view.loadUrl(ERROR_PAGE + q)
+            view.loadUrl(errorPage(failing, error.description.toString(), false))
+        }
+
+        override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+            val failing = error.url
+            if (UrlUtils.host(failing) in sslAllowed) {
+                handler.proceed()
+                return
+            }
+            handler.cancel()
+            tab.url = failing
+            view.loadUrl(errorPage(failing, activity.getString(R.string.ssl_error), true))
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {

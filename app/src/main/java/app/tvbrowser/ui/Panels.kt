@@ -1,5 +1,7 @@
 package app.tvbrowser.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.app.DownloadManager
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +59,7 @@ fun PanelHost(vm: BrowserViewModel, mgr: TabManager, onExit: () -> Unit) {
         Panel.HISTORY -> HistoryPanel(vm)
         Panel.DOWNLOADS -> DownloadsPanel()
         Panel.SETTINGS -> SettingsPanel(vm, mgr)
+        Panel.CONTEXT -> ContextPanel(vm)
     }
 }
 
@@ -86,6 +89,45 @@ private fun AddressPanel(vm: BrowserViewModel) {
             item {
                 if (text.text.isNotBlank()) {
                     TvRow(stringResource(R.string.go), text.text.trim(), Modifier.fillMaxWidth()) { vm.navigate(text.text) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContextPanel(vm: BrowserViewModel) {
+    val ctx = LocalContext.current
+    val link = vm.contextLink
+    val img = vm.contextImage
+    PanelFrame(stringResource(R.string.menu)) {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!link.isNullOrEmpty()) {
+                item {
+                    TvButton(stringResource(R.string.open_link), Modifier.fillMaxWidth().initialFocus()) { vm.navigate(link) }
+                }
+                item {
+                    TvButton(stringResource(R.string.open_new_tab), Modifier.fillMaxWidth()) { vm.newTab(link) }
+                }
+                item {
+                    TvButton(stringResource(R.string.copy_link), Modifier.fillMaxWidth()) {
+                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("url", link))
+                        vm.closePanel()
+                    }
+                }
+            }
+            if (!img.isNullOrEmpty()) {
+                item {
+                    TvButton(
+                        stringResource(R.string.open_image),
+                        Modifier.fillMaxWidth().initialFocusIf(link.isNullOrEmpty()),
+                    ) { vm.newTab(img) }
+                }
+                item {
+                    TvButton(stringResource(R.string.download_image), Modifier.fillMaxWidth()) {
+                        if (Downloads.enqueue(ctx, img, null, null, null)) vm.openPanel(Panel.DOWNLOADS) else vm.closePanel()
+                    }
                 }
             }
         }

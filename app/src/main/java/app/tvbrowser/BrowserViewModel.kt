@@ -45,6 +45,10 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
     var updateVersion by mutableStateOf("")
         private set
     private var apkUrl: String? = null
+    var contextLink by mutableStateOf<String?>(null)
+        private set
+    var contextImage by mutableStateOf<String?>(null)
+        private set
     private val main = Handler(Looper.getMainLooper())
 
     private var mgr: TabManager? = null
@@ -93,6 +97,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closePanel() {
         panel = Panel.NONE
+    }
+
+    fun openContext(link: String?, image: String?) {
+        if (link.isNullOrEmpty() && image.isNullOrEmpty()) return
+        contextLink = link
+        contextImage = image
+        openPanel(Panel.CONTEXT)
     }
 
     fun showChrome() {

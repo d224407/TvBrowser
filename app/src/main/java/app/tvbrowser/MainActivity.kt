@@ -1,12 +1,15 @@
 package app.tvbrowser
 
+import android.app.AlertDialog
 import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -25,6 +28,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (Build.VERSION.SDK_INT >= 26 && WebView.getCurrentWebViewPackage() == null) {
+            AlertDialog.Builder(this)
+                .setMessage(R.string.webview_missing)
+                .setOnDismissListener { finish() }
+                .show()
+            return
+        }
 
         val fullscreen = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -77,6 +88,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!::mgr.isInitialized) return super.dispatchKeyEvent(event)
         if (vm.panel == Panel.NONE && !vm.chromeVisible) {
             if (input.handle(event)) return true
             val handled = super.dispatchKeyEvent(event)
@@ -91,10 +103,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!::mgr.isInitialized) return
         mgr.resume()
     }
 
     override fun onPause() {
+        if (!::mgr.isInitialized) {
+            super.onPause()
+            return
+        }
         mgr.pause()
         vm.persistTabs()
         super.onPause()
@@ -102,12 +119,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        if (!::mgr.isInitialized) return
         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) mgr.trim()
     }
 
     override fun onDestroy() {
-        vm.detach()
-        mgr.destroyAll()
+        if (::mgr.isInitialized) {
+            vm.detach()
+            mgr.destroyAll()
+        }
         super.onDestroy()
     }
 }

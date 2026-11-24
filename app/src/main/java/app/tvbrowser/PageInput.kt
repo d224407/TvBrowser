@@ -2,6 +2,8 @@ package app.tvbrowser
 
 import android.app.Activity
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Choreographer
 import android.view.InputDevice
@@ -41,8 +43,27 @@ class PageInput(
         const val RESPONSE = 16f // velocity easing while held
         const val DECEL = 12f // velocity easing after release
         const val HOVER_INTERVAL_NS = 60_000_000L
+        const val LONG_PRESS_MS = 600L
     }
     private var downTime = 0L
+    private var touching = false
+    private var longFired = false
+    private val handler = Handler(Looper.getMainLooper())
+
+    // Long press on a link or image opens the context panel
+    private val longPress = Runnable {
+        val wv = mgr.activeWebView()
+        if (wv != null && touching) {
+            touch(wv, MotionEvent.ACTION_CANCEL)
+            touching = false
+            longFired = true
+            val msg = Handler(Looper.getMainLooper()) { m ->
+                vm.openContext(m.data.getString("url"), m.data.getString("src"))
+                true
+            }.obtainMessage()
+            wv.requestFocusNodeHref(msg)
+        }
+    }
     private val pressed = HashSet<Int>()
     private var pressStart = 0L
     private var lastFrame = 0L
@@ -93,8 +114,13 @@ class PageInput(
                 if (down && e.repeatCount == 0) {
                     wv.requestFocus()
                     touch(wv, MotionEvent.ACTION_DOWN)
+                    touching = true
+                    longFired = false
+                    handler.postDelayed(longPress, LONG_PRESS_MS)
                 } else if (!down) {
-                    touch(wv, MotionEvent.ACTION_UP)
+                    handler.removeCallbacks(longPress)
+                    if (longFired) longFired = false else if (touching) touch(wv, MotionEvent.ACTION_UP)
+                    touching = false
                 }
                 return true
             }
