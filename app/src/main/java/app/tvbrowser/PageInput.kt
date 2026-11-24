@@ -10,6 +10,8 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.webkit.WebView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import app.tvbrowser.data.Panel
 import app.tvbrowser.ui.CursorView
 import app.tvbrowser.web.TabManager
@@ -78,7 +80,7 @@ class PageInput(
             }
         }
 
-        if (!vm.settings.cursorMode) return false
+        if (!vm.settings.cursorMode || imeVisible()) return false
 
         when (e.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
@@ -99,6 +101,9 @@ class PageInput(
         }
         return false
     }
+
+    private fun imeVisible(): Boolean =
+        ViewCompat.getRootWindowInsets(cursorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true
 
     private fun ensureInit(wv: WebView) {
         if (cx < 0f || cy < 0f) {

@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.GeolocationPermissions
 import android.webkit.JsResult
@@ -107,6 +108,7 @@ class TabManager(
     }
 
     fun pause() {
+        CookieManager.getInstance().flush()
         activeWebView()?.onPause()
         views.values.firstOrNull()?.pauseTimers()
     }
@@ -127,6 +129,7 @@ class TabManager(
         customView = null
         customCallback = null
         fullscreenHost.removeView(v)
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         fullscreenHost.visibility = View.GONE
         cb?.onCustomViewHidden()
         return true
@@ -309,6 +312,7 @@ class TabManager(
                 FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
             )
             fullscreenHost.visibility = View.VISIBLE
+            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             view.requestFocus()
         }
 

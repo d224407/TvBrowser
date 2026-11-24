@@ -171,7 +171,14 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app) {
             return true
         }
         val tab = active
-        if (tab == null || tab.url.isEmpty()) return false
+        if (tab == null) return false
+        if (tab.url.isEmpty()) {
+            if (tabs.size > 1) {
+                closeTab(tab.id)
+                return true
+            }
+            return false
+        }
         if (!chromeVisible) {
             showChrome()
             return true
